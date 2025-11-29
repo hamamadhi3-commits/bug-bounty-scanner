@@ -1,0 +1,153 @@
+name: 🧠 Master Sentinel ULTIMATE
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets_file:
+        description: 'Targets file URL or paste targets (one per line)'
+        required: true
+        type: string
+      intensity:
+        description: 'Scan intensity (1=Fast, 2=Balanced, 3=Deep)'
+        required: false
+        default: '2'
+        type: choice
+        options:
+          - '1'
+          - '2'
+          - '3'
+      enable_ai:
+        description: 'Enable AI Analysis (Gemini)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      notification_mode:
+        description: 'Notification mode'
+        required: false
+        default: 'vulnerabilities_only'
+        type: choice
+        options:
+          - 'all'
+          - 'vulnerabilities_only'
+          - 'critical_only'
+  schedule:
+    - cron: '0 */6 * * *'
+
+jobs:
+  orchestrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: 📥 Get Targets
+        id: targets
+        run: |
+          TARGETS_INPUT="${{ github.event.inputs.targets_file }}"
+          INTENSITY="${{ github.event.inputs.intensity }}"
+          ENABLE_AI="${{ github.event.inputs.enable_ai }}"
+          NOTIFICATION_MODE="${{ github.event.inputs.notification_mode }}"
+          
+          # Default targets for scheduled runs
+          if [ -z "$TARGETS_INPUT" ]; then
+            echo "example.com" > targets.txt
+            echo "testphp.vulnweb.com" >> targets.txt
+          # URL input
+          elif [[ "$TARGETS_INPUT" =~ ^https?:// ]]; then
+            curl -sL "$TARGETS_INPUT" -o targets.txt || echo "$TARGETS_INPUT" > targets.txt
+          # Direct input
+          else
+            echo "$TARGETS_INPUT" | tr ',' '\n' | tr ' ' '\n' | grep -v '^$' > targets.txt
+          fi
+          
+          # Clean and validate
+          sed -i 's/https\?:\/\///g' targets.txt
+          sed -i 's/\/.*//' targets.txt
+          sed -i '/^$/d' targets.txt
+          sort -u targets.txt -o targets.txt
+          
+          COUNT=$(wc -l < targets.txt)
+          echo "✅ Targets loaded: $COUNT"
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+          echo "intensity=${INTENSITY:-2}" >> $GITHUB_OUTPUT
+          echo "enable_ai=${ENABLE_AI:-true}" >> $GITHUB_OUTPUT
+          echo "notification_mode=${NOTIFICATION_MODE:-vulnerabilities_only}" >> $GITHUB_OUTPUT
+          
+          cat targets.txt
+      
+      - name: 📡 Dispatch Workers
+        run: |
+          INTENSITY="${{ steps.targets.outputs.intensity }}"
+          ENABLE_AI="${{ steps.targets.outputs.enable_ai }}"
+          NOTIFICATION_MODE="${{ steps.targets.outputs.notification_mode }}"
+          
+          # Batch configuration
+          BATCH_SIZE=50
+          BATCH_NUM=0
+          
+          echo "🚀 Dispatching workers..."
+          
+          while IFS= read -r target; do
+            [ -z "$target" ] && continue
+            
+            echo "📤 Dispatching: $target"
+            
+            curl -X POST \
+              -H "Accept: application/vnd.github.v3+json" \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              https://api.github.com/repos/${{ github.repository }}/dispatches \
+              -d '{
+                "event_type": "scan_target",
+                "client_payload": {
+                  "target": "'"$target"'",
+                  "intensity": "'"$INTENSITY"'",
+                  "enable_ai": "'"$ENABLE_AI"'",
+                  "notification_mode": "'"$NOTIFICATION_MODE"'"
+                }
+              }' 2>/dev/null || true
+            
+            sleep 1
+            
+            # Batch cooldown
+            if [ $((++BATCH_NUM % BATCH_SIZE)) -eq 0 ]; then
+              echo "⏸️ Batch cooldown (30s)..."
+              sleep 30
+            fi
+          done < targets.txt
+          
+          echo "✅ All workers dispatched"
+      
+      - name: 📊 Summary
+        run: |
+          COUNT="${{ steps.targets.outputs.count }}"
+          INTENSITY="${{ steps.targets.outputs.intensity }}"
+          ENABLE_AI="${{ steps.targets.outputs.enable_ai }}"
+          NOTIFICATION_MODE="${{ steps.targets.outputs.notification_mode }}"
+          
+          echo "## 🧠 Master Sentinel ULTIMATE Activated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- 🎯 **Targets:** $COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "- ⚡ **Intensity:** $INTENSITY" >> $GITHUB_STEP_SUMMARY
+          echo "- 🤖 **AI Analysis:** $ENABLE_AI" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔔 **Notifications:** $NOTIFICATION_MODE" >> $GITHUB_STEP_SUMMARY
+          echo "- 📡 **Workers:** Dispatched" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Features Enabled:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Subdomain Discovery (Subfinder)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ HTTP Probing (HTTPX)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Web Crawling (Katana)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Vulnerability Scanning (Nuclei)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ AI Security Analysis (Gemini Pro)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Professional Discord Reports" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔔 **Notification Policy:**" >> $GITHUB_STEP_SUMMARY
+          if [ "$NOTIFICATION_MODE" = "all" ]; then
+            echo "- All scan results will be reported" >> $GITHUB_STEP_SUMMARY
+          elif [ "$NOTIFICATION_MODE" = "critical_only" ]; then
+            echo "- Only critical/high vulnerabilities will be reported" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Only scans with vulnerabilities will be reported" >> $GITHUB_STEP_SUMMARY
+          fi
+          
