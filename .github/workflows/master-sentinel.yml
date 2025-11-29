@@ -44,7 +44,7 @@ jobs:
                 -H "Accept: application/vnd.github+json" \
                 -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
                 -H "X-GitHub-Api-Version: 2022-11-28" \
-                https://api.github.com/repos/${{ github.repository }}/dispatches \
+                "https://api.github.com/repos/${{ github.repository }}/dispatches" \
                 -d "{
                   \"event_type\": \"scan_target\",
                   \"client_payload\": {
@@ -71,26 +71,25 @@ jobs:
           if [ -z "$DISPATCHED" ]; then
             DISPATCHED="0"
           fi
+
           TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-          cat > discord.json <<EOF
-{
-  "embeds": [{
-    "title": "🔄 Continuous Scan Initiated",
-    "description": "Automated bug bounty scanning started",
-    "color": 3447003,
-    "fields": [
-      {"name": "📊 Targets Scanned", "value": "$DISPATCHED", "inline": true},
-      {"name": "⏰ Started", "value": "$TIMESTAMP", "inline": true},
-      {"name": "⚡ Intensity", "value": "Level 2", "inline": true},
-      {"name": "🤖 AI Analysis", "value": "Enabled", "inline": true},
-      {"name": "🔔 Notifications", "value": "All Results", "inline": true},
-      {"name": "⏱️ Next Scan", "value": "In 6 hours", "inline": true}
-    ],
-    "footer": {"text": "Continuous Bug Bounty Scanner"}
-  }]
-}
-EOF
+          echo '{
+            "embeds": [{
+              "title": "🔄 Continuous Scan Initiated",
+              "description": "Automated bug bounty scanning started",
+              "color": 3447003,
+              "fields": [
+                {"name": "📊 Targets Scanned", "value": "'"$DISPATCHED"'", "inline": true},
+                {"name": "⏰ Started", "value": "'"$TIMESTAMP"'", "inline": true},
+                {"name": "⚡ Intensity", "value": "Level 2", "inline": true},
+                {"name": "🤖 AI Analysis", "value": "Enabled", "inline": true},
+                {"name": "🔔 Notifications", "value": "All Results", "inline": true},
+                {"name": "⏱️ Next Scan", "value": "In 6 hours", "inline": true}
+              ],
+              "footer": {"text": "Continuous Bug Bounty Scanner"}
+            }]
+          }' > discord.json
 
           curl -s -H "Content-Type: application/json" \
             -d @discord.json \
