@@ -1,79 +1,105 @@
-name: Worker Sentinel Stable
+name: Continuous Bug Bounty Scanner Pro
 
 on:
-  repository_dispatch:
-    types: [scan_target]
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
 
 jobs:
-  scan:
+  dispatch_scans:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 30
 
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Load target
-        id: target
+      - name: Load Targets & Dispatch Scans
+        id: dispatch
+        shell: bash
         run: |
-          echo "target=${{ github.event.client_payload.target }}" >> $GITHUB_OUTPUT
-          echo "scan_id=${{ github.event.client_payload.scan_id }}" >> $GITHUB_OUTPUT
+          set -euo pipefail
 
-      - name: Install tools
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y sqlmap jq
-          go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-          go install github.com/projectdiscovery/httpx/cmd/httpx@latest
-          go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
-          go install github.com/projectdiscovery/katana/cmd/katana@latest
-          go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+          echo "Loading targets from bug_bounty_targets.txt..."
 
-      - name: Subdomains
-        run: |
-          subfinder -d "${{ steps.target.outputs.target }}" -silent -o subs.txt || true
-
-      - name: Live hosts
-        run: |
-          [ -s subs.txt ] && httpx -list subs.txt -silent -o live.txt || touch live.txt
-
-      - name: URLs
-        run: |
-          if [ -s live.txt ]; then
-            cat live.txt | katana -silent -o urls.txt || true
-          else
-            touch urls.txt
+          if [ ! -f "bug_bounty_targets.txt" ]; then
+            echo "No target file found!"
+            echo "dispatched=0" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-      - name: Nuclei scan
-        id: nuclei
-        run: |
-          if [ -s live.txt ]; then
-            nuclei -list live.txt -silent -jsonl -o nuclei.json || true
-          else
-            touch nuclei.json
-          fi
-          echo "count=$(wc -l < nuclei.json || echo 0)" >> $GITHUB_OUTPUT
+          TARGETS=$(grep -v '^#' bug_bounty_targets.txt | grep -v '^$' | head -50 || true)
 
-      - name: Simple Discord summary
+          if [ -z "$TARGETS" ]; then
+            echo "No valid targets found."
+            echo "dispatched=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          SCAN_ID=$(date +%s)
+          DISPATCHED=0
+
+          while IFS= read -r target; do
+            if [ -n "$target" ]; then
+              echo "Dispatching: $target"
+
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                -X POST \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/repos/${{ github.repository }}/dispatches" \
+                -d "{
+                  \"event_type\": \"scan_target\",
+                  \"client_payload\": {
+                    \"target\": \"$target\",
+                    \"intensity\": \"2\",
+                    \"ai_analysis\": \"true\",
+                    \"notification_mode\": \"all\",
+                    \"scan_id\": \"${SCAN_ID}_${DISPATCHED}\"
+                  }
+                }")
+
+              if [[ "$HTTP_CODE" == 2* ]]; then
+                DISPATCHED=$((DISPATCHED + 1))
+              else
+                echo "Failed to dispatch ($HTTP_CODE)"
+              fi
+
+              sleep 5
+            fi
+          done <<< "$TARGETS"
+
+          echo "Dispatched $DISPATCHED scans"
+          echo "dispatched=$DISPATCHED" >> "$GITHUB_OUTPUT"
+
+      - name: Send Summary to Discord
         if: always()
+        shell: bash
         run: |
-          TARGET="${{ steps.target.outputs.target }}"
-          NCOUNT="${{ steps.nuclei.outputs.count }}"
+          DISPATCHED="${{ steps.dispatch.outputs.dispatched }}"
+          [ -z "$DISPATCHED" ] && DISPATCHED="0"
 
-          echo "{\"content\": \"Scan completed for $TARGET — Found $NCOUNT vulnerabilities\"}" > body.json
+          cat > discord.json <<EOF
+{
+  "embeds": [{
+    "title": "Continuous Scan Initiated",
+    "description": "Automated bug bounty scanning started",
+    "color": 3447003,
+    "fields": [
+      {"name": "Targets Scanned", "value": "$DISPATCHED", "inline": true},
+      {"name": "Started", "value": "$(date -u +%Y-%m-%dT%H:%M:%SZ)", "inline": true},
+      {"name": "Intensity", "value": "Level 2", "inline": true},
+      {"name": "AI Analysis", "value": "Enabled", "inline": true},
+      {"name": "Notifications", "value": "All Results", "inline": true},
+      {"name": "Next Scan", "value": "In 6 hours", "inline": true}
+    ]
+  }]
+}
+EOF
 
-          curl \
-            -H "Content-Type: application/json" \
-            -d @body.json \
-            "${{ secrets.DISCORD_WEBHOOK_URL }}"
+          curl -H "Content-Type: application/json" \
+            -d @discord.json \
+            "${{ secrets.DISCORD_WEBHOOK_URL }}" || true
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: "scan-${{ steps.target.outputs.scan_id }}"
-          path: |
-            subs.txt
-            live.txt
-            urls.txt
-            nuclei.json
+          echo "Discord summary sent."
