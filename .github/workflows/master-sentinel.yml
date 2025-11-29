@@ -1,9 +1,8 @@
-name: 🔄 Continuous Bug Bounty Scanner Pro
+name: Continuous Bug Bounty Scanner Pro
 
 on:
   schedule:
-    # Run every 6 hours
-    - cron: '0 */6 * * *'
+    - cron: "0 */6 * * *"
   workflow_dispatch:
 
 jobs:
@@ -12,43 +11,36 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: 📥 Checkout Repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🎯 Load Targets & Dispatch Scans
+      - name: Load Targets & Dispatch Scans
         id: dispatch
         shell: bash
         run: |
           set -euo pipefail
-
-          echo "🎯 Loading targets from bug_bounty_targets.txt..."
+          echo "Loading targets from bug_bounty_targets.txt..."
 
           if [ ! -f "bug_bounty_targets.txt" ]; then
-            echo "❌ bug_bounty_targets.txt not found!"
+            echo "No target file found!"
             echo "dispatched=0" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # Read targets (skip comments and empty lines)
           TARGETS=$(grep -v '^#' bug_bounty_targets.txt | grep -v '^$' | head -50 || true)
 
           if [ -z "$TARGETS" ]; then
-            echo "⚠️ No targets found in bug_bounty_targets.txt"
+            echo "No valid targets found."
             echo "dispatched=0" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
-          TARGET_COUNT=$(printf "%s\n" "$TARGETS" | wc -l)
-          echo "📊 Found $TARGET_COUNT targets to scan"
 
           SCAN_ID=$(date +%s)
           DISPATCHED=0
 
-          # Dispatch scans for each target
           while IFS= read -r target; do
             if [ -n "$target" ]; then
-              echo "🚀 Dispatching scan for: $target"
-
+              echo "Dispatching: $target"
               HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
                 -X POST \
                 -H "Accept: application/vnd.github+json" \
@@ -66,49 +58,46 @@ jobs:
                   }
                 }")
 
-              if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              if [[ "$HTTP_CODE" == 2* ]]; then
                 DISPATCHED=$((DISPATCHED + 1))
               else
-                echo "⚠️ Failed to dispatch $target (HTTP $HTTP_CODE)"
+                echo "Failed to dispatch ($HTTP_CODE)"
               fi
 
               sleep 5
             fi
           done <<< "$TARGETS"
 
-          echo "✅ Dispatched $DISPATCHED scans"
+          echo "Dispatched $DISPATCHED scans"
           echo "dispatched=$DISPATCHED" >> "$GITHUB_OUTPUT"
 
-      - name: 📤 Send Summary to Discord
+      - name: Send Summary to Discord
         if: always()
         shell: bash
         run: |
           DISPATCHED="${{ steps.dispatch.outputs.dispatched }}"
-          if [ -z "$DISPATCHED" ]; then
-            DISPATCHED="0"
-          fi
+          [ -z "$DISPATCHED" ] && DISPATCHED="0"
 
-          cat > discord_summary.json <<EOF
+          cat > discord.json <<EOF
 {
   "embeds": [{
-    "title": "🔄 Continuous Scan Initiated",
-    "description": "**Automated bug bounty scanning started**",
+    "title": "Continuous Scan Initiated",
+    "description": "Automated bug bounty scanning started",
     "color": 3447003,
     "fields": [
-      {"name": "📊 Targets Scanned", "value": "$DISPATCHED", "inline": true},
-      {"name": "⏰ Started", "value": "$(date -u +%Y-%m-%dT%H:%M:%SZ)", "inline": true},
-      {"name": "⚡ Intensity", "value": "Level 2", "inline": true},
-      {"name": "🤖 AI Analysis", "value": "Enabled", "inline": true},
-      {"name": "🔔 Notifications", "value": "All Results", "inline": true},
-      {"name": "⏱️ Next Scan", "value": "In 6 hours", "inline": true}
-    ],
-    "footer": {"text": "Continuous Bug Bounty Scanner"}
+      {"name": "Targets Scanned", "value": "$DISPATCHED", "inline": true},
+      {"name": "Started", "value": "$(date -u +%Y-%m-%dT%H:%M:%SZ)", "inline": true},
+      {"name": "Intensity", "value": "Level 2", "inline": true},
+      {"name": "AI Analysis", "value": "Enabled", "inline": true},
+      {"name": "Notifications", "value": "All Results", "inline": true},
+      {"name": "Next Scan", "value": "In 6 hours", "inline": true}
+    ]
   }]
 }
 EOF
 
           curl -H "Content-Type: application/json" \
-            -d @discord_summary.json \
+            -d @discord.json \
             "${{ secrets.DISCORD_WEBHOOK_URL }}" || true
 
-          echo "✅ Summary sent to Discord"
+          echo "Discord summary sent."
