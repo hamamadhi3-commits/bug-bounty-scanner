@@ -1,4 +1,4 @@
-name: 🔥 Worker Sentinel ULTIMATE Pro
+name: "Worker Sentinel Ultimate Pro"
 
 on:
   repository_dispatch:
@@ -10,10 +10,10 @@ jobs:
     timeout-minutes: 180
 
     steps:
-      - name: 📥 Checkout
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🎯 Load Target
+      - name: Load Target
         id: target
         run: |
           echo "target=${{ github.event.client_payload.target }}" >> $GITHUB_OUTPUT
@@ -22,7 +22,7 @@ jobs:
           echo "notification_mode=${{ github.event.client_payload.notification_mode }}" >> $GITHUB_OUTPUT
           echo "scan_id=${{ github.event.client_payload.scan_id }}" >> $GITHUB_OUTPUT
 
-      - name: 🔧 Install Tools
+      - name: Install Tools
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y sqlmap jq
@@ -37,28 +37,20 @@ jobs:
           go install github.com/lc/gau/v2/cmd/gau@latest
           go install github.com/003random/getJS@latest
 
-      - name: 🔍 Subdomain Discovery
+      - name: Subdomain Discovery
         run: |
           TARGET="${{ steps.target.outputs.target }}"
-          subfinder -d "$TARGET" -all -silent -o subs.txt || true
+          subfinder -d "$TARGET" -silent -o subs.txt || true
 
-      - name: 🔌 Port Scanner
+      - name: Port Scanner
         run: |
-          if [ -s subs.txt ]; then
-            naabu -list subs.txt -top-ports 100 -silent -o ports.txt || true
-          else
-            touch ports.txt
-          fi
+          [ -s subs.txt ] && naabu -list subs.txt -top-ports 100 -silent -o ports.txt || touch ports.txt
 
-      - name: 🌐 Probe Live Hosts
+      - name: Probe Live Hosts
         run: |
-          if [ -s subs.txt ]; then
-            httpx -list subs.txt -silent -o live.txt || true
-          else
-            touch live.txt
-          fi
+          [ -s subs.txt ] && httpx -list subs.txt -silent -o live.txt || touch live.txt
 
-      - name: 🕷️ Crawl Websites
+      - name: Crawl URLs
         run: |
           if [ -s live.txt ]; then
             cat live.txt | katana -silent -o urls.txt || true
@@ -69,7 +61,7 @@ jobs:
             touch urls.txt
           fi
 
-      - name: 🔎 Nuclei Scan
+      - name: Nuclei Scan
         id: nuclei
         run: |
           if [ -s live.txt ]; then
@@ -80,19 +72,19 @@ jobs:
           COUNT=$(wc -l < nuclei.json || echo 0)
           echo "count=$COUNT" >> $GITHUB_OUTPUT
 
-      - name: 💉 SQL Injection Testing
+      - name: SQL Injection Testing
         id: sqli
         run: |
           SQLI=0
           if [ -s urls.txt ]; then
             grep '?' urls.txt | head -20 > params.txt || true
-            while read -r u; do
-              timeout 30 sqlmap -u "$u" --batch --level=1 &>/dev/null && SQLI=$((SQLI+1))
+            while read -r url; do
+              timeout 30 sqlmap -u "$url" --batch &>/dev/null && SQLI=$((SQLI+1))
             done < params.txt
           fi
           echo "count=$SQLI" >> $GITHUB_OUTPUT
 
-      - name: ⚡ XSS Detection
+      - name: XSS Detection
         id: xss
         run: |
           if [ -s urls.txt ]; then
@@ -103,42 +95,41 @@ jobs:
           fi
           echo "count=$XSS" >> $GITHUB_OUTPUT
 
-      - name: 🤖 Discord Reporting
+      - name: Discord Report
         if: always()
         run: |
           SUBS=$(wc -l < subs.txt || echo 0)
           LIVE=$(wc -l < live.txt || echo 0)
           URLS=$(wc -l < urls.txt || echo 0)
-          VULN="${{ steps.nuclei.outputs.count }}"
-          SQLI="${{ steps.sqli.outputs.count }}"
-          XSS="${{ steps.xss.outputs.count }}"
+          VULN=${{ steps.nuclei.outputs.count }}
+          SQLI=${{ steps.sqli.outputs.count }}
+          XSS=${{ steps.xss.outputs.count }}
           TOTAL=$((VULN + SQLI + XSS))
 
-          cat > summary.json <<EOF
+          cat > report.json <<EOF
 {
-  "content": "📊 Scan Complete!",
   "embeds": [{
-    "title": "🔥 Worker Sentinel Scan Result",
+    "title": "Scan Complete",
     "color": 5814783,
     "fields": [
-      {"name": "🎯 Target", "value": "${{ steps.target.outputs.target }}"},
-      {"name": "🌐 Subdomains", "value": "$SUBS"},
-      {"name": "🟢 Live Hosts", "value": "$LIVE"},
-      {"name": "🕷 URLs", "value": "$URLS"},
-      {"name": "🐛 Nuclei", "value": "$VULN"},
-      {"name": "💉 SQLi", "value": "$SQLI"},
-      {"name": "⚡ XSS", "value": "$XSS"},
-      {"name": "🚨 Total", "value": "$TOTAL"}
+      {"name": "Target", "value": "${{ steps.target.outputs.target }}"},
+      {"name": "Subdomains", "value": "$SUBS"},
+      {"name": "Live Hosts", "value": "$LIVE"},
+      {"name": "URLs", "value": "$URLS"},
+      {"name": "Nuclei", "value": "$VULN"},
+      {"name": "SQLi", "value": "$SQLI"},
+      {"name": "XSS", "value": "$XSS"},
+      {"name": "Total", "value": "$TOTAL"}
     ]
   }]
 }
 EOF
 
           curl -H "Content-Type: application/json" \
-               -d @summary.json \
+               -d @report.json \
                "${{ secrets.DISCORD_WEBHOOK_URL }}"
 
-      - name: 📦 Upload Artifacts
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: scan-${{ steps.target.outputs.scan_id }}
@@ -147,5 +138,5 @@ EOF
             live.txt
             urls.txt
             nuclei.json
-            xss.txt
             ports.txt
+            xss.txt
