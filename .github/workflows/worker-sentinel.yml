@@ -8,9 +8,12 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     timeout-minutes: 180
-    
+
     steps:
-      - name: 🎯 Get Target
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🎯 Load Target
         id: target
         run: |
           echo "target=${{ github.event.client_payload.target }}" >> $GITHUB_OUTPUT
@@ -18,360 +21,131 @@ jobs:
           echo "ai_analysis=${{ github.event.client_payload.ai_analysis }}" >> $GITHUB_OUTPUT
           echo "notification_mode=${{ github.event.client_payload.notification_mode }}" >> $GITHUB_OUTPUT
           echo "scan_id=${{ github.event.client_payload.scan_id }}" >> $GITHUB_OUTPUT
-          
-          echo "🎯 Target: ${{ github.event.client_payload.target }}"
-          echo "⚡ Intensity: ${{ github.event.client_payload.intensity }}"
-          echo "🤖 AI Analysis: ${{ github.event.client_payload.ai_analysis }}"
-          echo "🔔 Notification: ${{ github.event.client_payload.notification_mode }}"
-      
-      - name: 🔧 Install All Tools
+
+      - name: 🔧 Install Tools
         run: |
-          echo "🔧 Installing comprehensive toolset..."
-          
-          # Core tools
-          go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-          go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
-          go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
-          go install -v github.com/projectdiscovery/katana/cmd/katana@latest
-          go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
-          
-          # XSS Detection
-          go install -v github.com/hahwul/dalfox/v2@latest
-          
-          # SQL Injection
           sudo apt-get update -qq
-          sudo apt-get install -y sqlmap
-          
-          # Parameter Discovery
-          go install -v github.com/ffuf/ffuf/v2@latest
-          go install -v github.com/tomnomnom/waybackurls@latest
-          go install -v github.com/lc/gau/v2/cmd/gau@latest
-          
-          # JavaScript Analysis
-          go install -v github.com/003random/getJS@latest
-          go install -v github.com/tomnomnom/gf@latest
-          
-          # Directory/File Discovery
-          go install -v github.com/ffuf/ffuf/v2@latest
-          
-          echo "✅ All tools installed!"
-          
-      - name: 🔍 Advanced Subdomain Discovery
+          sudo apt-get install -y sqlmap jq
+          go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+          go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+          go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+          go install github.com/projectdiscovery/katana/cmd/katana@latest
+          go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+          go install github.com/hahwul/dalfox/v2@latest
+          go install github.com/ffuf/ffuf/v2@latest
+          go install github.com/tomnomnom/waybackurls@latest
+          go install github.com/lc/gau/v2/cmd/gau@latest
+          go install github.com/003random/getJS@latest
+
+      - name: 🔍 Subdomain Discovery
         run: |
           TARGET="${{ steps.target.outputs.target }}"
-          echo "🔍 Discovering subdomains for $TARGET..."
-          
-          # Subfinder with all sources
-          subfinder -d "$TARGET" -all -recursive -silent -o subs_subfinder.txt 2>/dev/null || touch subs_subfinder.txt
-          
-          # Additional sources
-          curl -s "https://crt.sh/?q=%25.$TARGET&output=json" | jq -r '.[].name_value' 2>/dev/null | sort -u >> subs_crtsh.txt || touch subs_crtsh.txt
-          
-          # Combine and deduplicate
-          cat subs_*.txt 2>/dev/null | sort -u | grep -v '*' > subs.txt || touch subs.txt
-          
-          COUNT=$(wc -l < subs.txt 2>/dev/null || echo "0")
-          echo "✅ Subdomains found: $COUNT"
-          echo "count=$COUNT" >> $GITHUB_OUTPUT
-          
-      - name: 🔌 Port Scanning
+          subfinder -d "$TARGET" -all -silent -o subs.txt || true
+
+      - name: 🔌 Port Scanner
         run: |
-          echo "🔌 Scanning for open ports..."
-          
           if [ -s subs.txt ]; then
-            naabu -list subs.txt -silent -top-ports 100 -o ports.txt 2>/dev/null || touch ports.txt
-            PORT_COUNT=$(wc -l < ports.txt 2>/dev/null || echo "0")
-            echo "✅ Open ports found: $PORT_COUNT"
+            naabu -list subs.txt -top-ports 100 -silent -o ports.txt || true
           else
             touch ports.txt
-            echo "⚠️ No subdomains to scan"
           fi
-          
-      - name: 🌐 HTTP Probing
+
+      - name: 🌐 Probe Live Hosts
         run: |
-          echo "🌐 Probing for live hosts..."
-          
           if [ -s subs.txt ]; then
-            cat subs.txt | httpx -silent -timeout 10 -retries 2 -threads 50 -o live.txt 2>/dev/null || touch live.txt
-            LIVE_COUNT=$(wc -l < live.txt 2>/dev/null || echo "0")
-            echo "✅ Live hosts: $LIVE_COUNT"
+            httpx -list subs.txt -silent -o live.txt || true
           else
             touch live.txt
-            echo "⚠️ No subdomains to probe"
           fi
-          
-      - name: 🕷️ Advanced Web Crawling & JS Analysis
+
+      - name: 🕷️ Crawl Websites
         run: |
-          echo "🕷️ Crawling and analyzing JavaScript..."
-          
           if [ -s live.txt ]; then
-            # Katana crawling
-            cat live.txt | katana -silent -d 3 -jc -kf all -o urls_katana.txt 2>/dev/null || touch urls_katana.txt
-            
-            # Wayback URLs
-            cat live.txt | waybackurls 2>/dev/null | sort -u >> urls_wayback.txt || touch urls_wayback.txt
-            
-            # GAU (GetAllURLs)
-            cat live.txt | gau --threads 5 --subs 2>/dev/null | sort -u >> urls_gau.txt || touch urls_gau.txt
-            
-            # Extract JavaScript files
-            cat live.txt | getJS --complete 2>/dev/null | sort -u > js_files.txt || touch js_files.txt
-            
-            # Combine all URLs
-            cat urls_*.txt 2>/dev/null | sort -u > urls.txt || touch urls.txt
-            
-            URL_COUNT=$(wc -l < urls.txt 2>/dev/null || echo "0")
-            JS_COUNT=$(wc -l < js_files.txt 2>/dev/null || echo "0")
-            echo "✅ URLs found: $URL_COUNT"
-            echo "✅ JS files found: $JS_COUNT"
+            cat live.txt | katana -silent -o urls.txt || true
+            cat live.txt | waybackurls >> urls.txt || true
+            cat live.txt | gau >> urls.txt || true
+            sort -u urls.txt -o urls.txt
           else
-            touch urls.txt js_files.txt
-            echo "⚠️ No live hosts to crawl"
+            touch urls.txt
           fi
-          
-      - name: 🔎 Ultimate Nuclei Vulnerability Scan
+
+      - name: 🔎 Nuclei Scan
         id: nuclei
         run: |
-          INTENSITY="${{ steps.target.outputs.intensity }}"
-          
-          echo "🔎 Running comprehensive vulnerability scan..."
-          
-          # Update templates
-          nuclei -update-templates -silent 2>/dev/null || true
-          
-          # Set scan parameters based on intensity
-          if [ "$INTENSITY" -ge "3" ]; then
-            SEV="critical,high,medium,low,info"
-            RATE=200
-            TAGS="cve,oast,sqli,xss,ssrf,rce,lfi,xxe,idor,auth-bypass,file-upload,redirect,ssti,cors,jwt,api,config,exposure,takeover,injection,traversal,deserialization,xxe,csrf,misconfiguration"
-          elif [ "$INTENSITY" -ge "2" ]; then
-            SEV="critical,high,medium"
-            RATE=150
-            TAGS="cve,oast,sqli,xss,ssrf,rce,lfi,xxe,idor,auth-bypass,file-upload,injection,api,exposure,takeover"
-          else
-            SEV="critical,high"
-            RATE=100
-            TAGS="cve,sqli,xss,ssrf,rce,auth-bypass,injection"
-          fi
-          
-          # Scan with Nuclei
           if [ -s live.txt ]; then
-            cat live.txt | nuclei -silent -severity $SEV -tags $TAGS \
-              -timeout 15 -rate-limit $RATE -jsonl -o nuclei.json 2>/dev/null || touch nuclei.json
-            
-            cat live.txt | nuclei -silent -severity $SEV -tags $TAGS \
-              -timeout 15 -rate-limit $RATE -o results.txt 2>/dev/null || touch results.txt
+            nuclei -list live.txt -silent -jsonl -o nuclei.json || true
           else
-            touch nuclei.json results.txt
+            touch nuclei.json
           fi
-          
-          # Count vulnerabilities
-          if [ -s nuclei.json ]; then
-            COUNT=$(wc -l < nuclei.json)
-          else
-            COUNT=0
-          fi
-          
-          echo "✅ Vulnerabilities found: $COUNT"
+          COUNT=$(wc -l < nuclei.json || echo 0)
           echo "count=$COUNT" >> $GITHUB_OUTPUT
-          
-          if [ "$COUNT" -gt "0" ]; then
-            echo "📋 Sample findings:"
-            head -5 results.txt
-          fi
-          
-      - name: 💉 Advanced SQL Injection Testing
+
+      - name: 💉 SQL Injection Testing
         id: sqli
         run: |
-          echo "💉 Testing for SQL Injection..."
-          
-          SQLI_COUNT=0
-          
-          if [ -s urls.txt ] && [ "${{ steps.target.outputs.intensity }}" -ge "2" ]; then
-            # Extract URLs with parameters
-            grep '?' urls.txt | head -20 > urls_with_params.txt || touch urls_with_params.txt
-            
-            if [ -s urls_with_params.txt ]; then
-              while IFS= read -r url; do
-                # Quick SQLMap test
-                timeout 60 sqlmap -u "$url" --batch --random-agent --level=1 --risk=1 \
-                  --technique=BEUSTQ --threads=3 2>/dev/null | grep -i "parameter.*vulnerable" && ((SQLI_COUNT++)) || true
-              done < urls_with_params.txt
-            fi
+          SQLI=0
+          if [ -s urls.txt ]; then
+            grep '?' urls.txt | head -20 > params.txt || true
+            while read -r u; do
+              timeout 30 sqlmap -u "$u" --batch --level=1 &>/dev/null && SQLI=$((SQLI+1))
+            done < params.txt
           fi
-          
-          echo "✅ SQL Injection vulnerabilities: $SQLI_COUNT"
-          echo "count=$SQLI_COUNT" >> $GITHUB_OUTPUT
-          
-      - name: ⚡ Advanced XSS Detection
+          echo "count=$SQLI" >> $GITHUB_OUTPUT
+
+      - name: ⚡ XSS Detection
         id: xss
         run: |
-          echo "⚡ Testing for XSS..."
-          
-          XSS_COUNT=0
-          
-          if [ -s urls.txt ] && [ "${{ steps.target.outputs.intensity }}" -ge "2" ]; then
-            # Extract URLs with parameters
-            grep '?' urls.txt | head -30 > urls_for_xss.txt || touch urls_for_xss.txt
-            
-            if [ -s urls_for_xss.txt ]; then
-              cat urls_for_xss.txt | dalfox pipe -silent -o xss_results.txt 2>/dev/null || touch xss_results.txt
-              XSS_COUNT=$(wc -l < xss_results.txt 2>/dev/null || echo "0")
-            fi
+          if [ -s urls.txt ]; then
+            grep '?' urls.txt | dalfox pipe -silent -o xss.txt || true
+            XSS=$(wc -l < xss.txt || echo 0)
+          else
+            XSS=0
           fi
-          
-          echo "✅ XSS vulnerabilities: $XSS_COUNT"
-          echo "count=$XSS_COUNT" >> $GITHUB_OUTPUT
-          
-      - name: 🤖 Ultimate AI Analysis & Discord Reporting
+          echo "count=$XSS" >> $GITHUB_OUTPUT
+
+      - name: 🤖 Discord Reporting
         if: always()
         run: |
-          TARGET="${{ steps.target.outputs.target }}"
-          SCAN_ID="${{ steps.target.outputs.scan_id }}"
-          AI_ANALYSIS="${{ steps.target.outputs.ai_analysis }}"
-          NOTIFICATION_MODE="${{ steps.target.outputs.notification_mode }}"
-          
-          SUBS=$(wc -l < subs.txt 2>/dev/null || echo "0")
-          LIVE=$(wc -l < live.txt 2>/dev/null || echo "0")
-          URLS=$(wc -l < urls.txt 2>/dev/null || echo "0")
+          SUBS=$(wc -l < subs.txt || echo 0)
+          LIVE=$(wc -l < live.txt || echo 0)
+          URLS=$(wc -l < urls.txt || echo 0)
           VULN="${{ steps.nuclei.outputs.count }}"
           SQLI="${{ steps.sqli.outputs.count }}"
           XSS="${{ steps.xss.outputs.count }}"
-          
-          TOTAL_VULN=$((VULN + SQLI + XSS))
-          
-          echo "📊 Scan Summary:"
-          echo "- Subdomains: $SUBS"
-          echo "- Live Hosts: $LIVE"
-          echo "- URLs: $URLS"
-          echo "- Nuclei Vulns: $VULN"
-          echo "- SQL Injection: $SQLI"
-          echo "- XSS: $XSS"
-          echo "- Total Vulnerabilities: $TOTAL_VULN"
-          
-          # Check if should send notification
-          SHOULD_NOTIFY=false
-          if [ "$NOTIFICATION_MODE" = "all" ]; then
-            SHOULD_NOTIFY=true
-          elif [ "$NOTIFICATION_MODE" = "vulnerabilities_only" ] && [ "$TOTAL_VULN" -gt "0" ]; then
-            SHOULD_NOTIFY=true
-          fi
-          
-          if [ "$SHOULD_NOTIFY" = "false" ]; then
-            echo "ℹ️ Skipping notification (mode: $NOTIFICATION_MODE, vulns: $TOTAL_VULN)"
-            exit 0
-          fi
-          
-          # Build Discord message
-          if [ "$TOTAL_VULN" -gt "0" ]; then
-            TITLE="🚨 VULNERABILITIES FOUND!"
-            COLOR=15158332
-            DESCRIPTION="**Critical security vulnerabilities discovered!**"
-          else
-            TITLE="✅ Scan Complete - No Vulnerabilities"
-            COLOR=5763719
-            DESCRIPTION="**Scan completed successfully. No vulnerabilities detected.**"
-          fi
-          
-          # Create base embed
-          cat > discord_payload.json << EOF
+          TOTAL=$((VULN + SQLI + XSS))
+
+          cat > summary.json <<EOF
 {
+  "content": "📊 Scan Complete!",
   "embeds": [{
-    "title": "$TITLE",
-    "description": "$DESCRIPTION",
-    "color": $COLOR,
+    "title": "🔥 Worker Sentinel Scan Result",
+    "color": 5814783,
     "fields": [
-      {"name": "🎯 Target", "value": "\`$TARGET\`", "inline": true},
-      {"name": "🆔 Scan ID", "value": "\`$SCAN_ID\`", "inline": true},
-      {"name": "⏰ Completed", "value": "$(date -u +%Y-%m-%d\ %H:%M:%S) UTC", "inline": false},
-      {"name": "🔍 Subdomains", "value": "$SUBS", "inline": true},
-      {"name": "🌐 Live Hosts", "value": "$LIVE", "inline": true},
-      {"name": "🕷️ URLs", "value": "$URLS", "inline": true},
-      {"name": "🐛 Nuclei Vulns", "value": "$VULN", "inline": true},
-      {"name": "💉 SQL Injection", "value": "$SQLI", "inline": true},
-      {"name": "⚡ XSS", "value": "$XSS", "inline": true},
-      {"name": "📊 Total Vulnerabilities", "value": "**$TOTAL_VULN**", "inline": false}
-    ],
-    "footer": {"text": "Bug Bounty Scanner Pro"},
-    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      {"name": "🎯 Target", "value": "${{ steps.target.outputs.target }}"},
+      {"name": "🌐 Subdomains", "value": "$SUBS"},
+      {"name": "🟢 Live Hosts", "value": "$LIVE"},
+      {"name": "🕷 URLs", "value": "$URLS"},
+      {"name": "🐛 Nuclei", "value": "$VULN"},
+      {"name": "💉 SQLi", "value": "$SQLI"},
+      {"name": "⚡ XSS", "value": "$XSS"},
+      {"name": "🚨 Total", "value": "$TOTAL"}
+    ]
   }]
 }
 EOF
-          
-          # If vulnerabilities found, add detailed reports
-          if [ "$TOTAL_VULN" -gt "0" ] && [ -s nuclei.json ]; then
-            echo "🤖 Generating AI analysis..."
-            
-            # Process each vulnerability
-            while IFS= read -r vuln_json; do
-              # Extract vulnerability details
-              VULN_NAME=$(echo "$vuln_json" | jq -r '.info.name // "Unknown"')
-              VULN_SEVERITY=$(echo "$vuln_json" | jq -r '.info.severity // "unknown"')
-              VULN_TYPE=$(echo "$vuln_json" | jq -r '.type // "unknown"')
-              MATCHED_AT=$(echo "$vuln_json" | jq -r '.["matched-at"] // .host // "N/A"')
-              EXTRACTED=$(echo "$vuln_json" | jq -r '.["extracted-results"][]? // empty' | head -3 | tr '\n' ' ')
-              
-              # AI Analysis if enabled
-              AI_REPORT=""
-              if [ "$AI_ANALYSIS" = "true" ] && [ -n "$GEMINI_API_KEY" ]; then
-                AI_PROMPT="Analyze this security vulnerability and provide:
-1. Summary Title (one line)
-2. Technical Severity (with CVSS score estimate)
-3. Impact (what attacker can do)
-4. Exploitation Steps (how to exploit)
-5. Bug Bounty Value (estimated USD range)
-6. Remediation (how to fix)
-7. References (CWE, OWASP)
 
-Vulnerability:
-- Name: $VULN_NAME
-- Type: $VULN_TYPE
-- Severity: $VULN_SEVERITY
-- URL: $MATCHED_AT
-- Evidence: $EXTRACTED
+          curl -H "Content-Type: application/json" \
+               -d @summary.json \
+               "${{ secrets.DISCORD_WEBHOOK_URL }}"
 
-Be concise and practical for bug bounty submission."
-                
-                AI_RESPONSE=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=$GEMINI_API_KEY" \
-                  -H "Content-Type: application/json" \
-                  -d "{\"contents\":[{\"parts\":[{\"text\":$(echo "$AI_PROMPT" | jq -Rs .)}]}]}" 2>/dev/null | \
-                  jq -r '.candidates[0].content.parts[0].text // "Analysis unavailable"' || echo "Analysis unavailable")
-                
-                AI_REPORT="### 🤖 AI Security Analysis\n$AI_RESPONSE"
-              fi
-              
-              # Send detailed vulnerability report
-              curl -H "Content-Type: application/json" \
-                -d "{
-                  \"embeds\": [{
-                    \"title\": \"🔴 $VULN_NAME\",
-                    \"description\": \"## 🐛 Vulnerability Report\n\n### 📋 Summary\n**Name:** $VULN_NAME\n**Type:** \`$VULN_TYPE\`\n**Severity:** 🔴 $(echo $VULN_SEVERITY | tr '[:lower:]' '[:upper:]')\n\n### 🌐 Target Information\n**URL:** \`$MATCHED_AT\`\n**Target:** $TARGET\n**Discovered:** $(date -u +%Y-%m-%d\ %H:%M) UTC\n\n### 🔍 Extracted Evidence\n\`\`\`\n$EXTRACTED\n\`\`\`\n\n$AI_REPORT\n\n---\n✅ Ready for Bug Bounty Submission\n📊 Scan ID: $SCAN_ID\",
-                    \"color\": 15158332,
-                    \"footer\": {\"text\": \"Vulnerability Report\"},
-                    \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-                  }]
-                }" "${{ secrets.DISCORD_WEBHOOK_URL }}" 2>/dev/null || true
-              
-              sleep 2
-            done < nuclei.json
-          fi
-          
-          # Send summary
-          curl -H "Content-Type: application/json" -d @discord_payload.json "${{ secrets.DISCORD_WEBHOOK_URL }}"
-          
-          echo "✅ Discord notification sent!"
-          
       - name: 📦 Upload Artifacts
-        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: scan-results-${{ steps.target.outputs.scan_id }}
+          name: scan-${{ steps.target.outputs.scan_id }}
           path: |
             subs.txt
             live.txt
             urls.txt
-            results.txt
             nuclei.json
-            js_files.txt
-            xss_results.txt
-          retention-days: 90
+            xss.txt
+            ports.txt
