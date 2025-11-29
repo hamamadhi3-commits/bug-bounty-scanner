@@ -67,7 +67,10 @@ jobs:
         if: always()
         shell: bash
         run: |
-          DISPATCHED="${{ steps.dispatch.outputs.dispatched || '0' }}"
+          DISPATCHED="${{ steps.dispatch.outputs.dispatched }}"
+          if [ -z "$DISPATCHED" ]; then
+            DISPATCHED="0"
+          fi
           TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           cat > discord.json <<EOF
