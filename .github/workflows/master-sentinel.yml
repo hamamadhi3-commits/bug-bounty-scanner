@@ -2,7 +2,7 @@ name: 🧠 Digital Sentinel PRIME v4.1 – Autonomous Dispatch System
 
 on:
   schedule:
-    - cron: "0 */6 * * *"   # هەر ٦ کاتژمێر جارێک
+    - cron: "0 */6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -14,13 +14,14 @@ jobs:
   update_and_dispatch:
     strategy:
       matrix:
-        worker: [1, 2, 3, 4]   # ٤ Worker پارالێڵ
+        worker: [1, 2, 3, 4]
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
     env:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: 📥 Checkout Repository
@@ -35,17 +36,24 @@ jobs:
         run: |
           pip install requests pyyaml
 
+      - name: 🧠 Install GitHub CLI
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y gh
+          gh auth setup-git
+          echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+
       - name: 🔍 Update Target List
         run: |
-          echo "🔄 Fetching updated targets from Bugcrowd..."
-          python3 src/update_targets.py || echo "No new targets found."
+          echo "🔄 Fetching updated targets..."
+          python3 src/update_targets.py || echo "No new targets."
 
       - name: 🚀 Dispatch Scans to Workers
         run: |
-          echo "📡 Dispatching scan to worker #${{ matrix.worker }}"
+          echo "📡 Dispatching Worker #${{ matrix.worker }}"
           gh workflow run "worker-sentinel.yml" \
             -f worker_id=${{ matrix.worker }} \
-            -r main
+            --ref main
 
       - name: 🤖 Generate AI Summary Report
         run: |
@@ -57,7 +65,7 @@ jobs:
         run: |
           if [ -n "${{ secrets.DISCORD_WEBHOOK_URL }}" ]; then
             curl -H "Content-Type: application/json" \
-              -d "{\"content\": \"✅ Digital Sentinel PRIME v4.1 (Worker #${{ matrix.worker }}) completed its cycle successfully.\"}" \
+              -d "{\"content\": \"✅ Digital Sentinel PRIME v4.1 (Worker #${{ matrix.worker }}) cycle complete.\"}" \
               "${{ secrets.DISCORD_WEBHOOK_URL }}"
           else
             echo "⚠️ Discord webhook not configured."
