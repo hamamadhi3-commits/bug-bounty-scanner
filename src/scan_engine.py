@@ -1,121 +1,110 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-⚡ Digital Sentinel PRIME v4.2 – Deep Mode Worker
-Self-logging, resilient, auto-recovery scanning engine for authorized Bugcrowd targets.
-"""
+# ==============================================================
+#  🚀 Digital Sentinel – Deep Mode Worker Engine v4.2 (Stable)
+#  Author: hamamadhi3
+#  Description:
+#   Runs Deep Scan tasks on authorized Bugcrowd targets.
+#   Includes absolute-path patch for GitHub Actions.
+# ==============================================================
 
 import os
 import sys
 import time
-import traceback
 import requests
-from datetime import datetime
 
-# ========== Configuration ==========
-DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL")
-TARGET_FILE = "targets/bugcrowd_203.txt"  # Main target list
-LOG_DIR = "logs"
-ERROR_LOG = os.path.join(LOG_DIR, "errors.log")
-MAIN_LOG = os.path.join(LOG_DIR, f"worker_{int(time.time())}.log")
+# ==============================================================
+#  PATH CONFIGURATION (FIXED for GitHub Actions)
+# ==============================================================
 
-# Ensure log directory exists
-os.makedirs(LOG_DIR, exist_ok=True)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TARGET_FILE = os.path.join(BASE_DIR, "..", "bug-bounty-scanner", "targets", "bugcrowd_203.txt")
 
+# ==============================================================
+#  DISCORD NOTIFY (Optional)
+# ==============================================================
 
-# ========== Logging ==========
-def log(msg: str):
-    """Write message to log file and stdout."""
-    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    line = f"[{timestamp}] {msg}"
-    print(line)
-    with open(MAIN_LOG, "a", encoding="utf-8") as f:
-        f.write(line + "\n")
+DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL", None)
 
-
-def log_error(msg: str):
-    """Record critical error message."""
-    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    err_line = f"[{timestamp}] ❌ ERROR: {msg}"
-    with open(ERROR_LOG, "a", encoding="utf-8") as ef:
-        ef.write(err_line + "\n")
-    log(err_line)
-
-
-def send_discord(msg: str):
-    """Send notification to Discord channel."""
+def notify_discord(message: str):
+    """Send message to Discord if webhook exists."""
     if not DISCORD_WEBHOOK:
-        log("⚠️ Discord webhook not set; skipping send.")
+        print("⚠️ Discord webhook not set; skipping send.")
         return
     try:
-        payload = {"content": msg}
-        requests.post(DISCORD_WEBHOOK, json=payload, timeout=10)
+        requests.post(DISCORD_WEBHOOK, json={"content": message}, timeout=10)
     except Exception as e:
-        log_error(f"Failed to send Discord message: {e}")
+        print(f"⚠️ Discord send failed: {e}")
 
+# ==============================================================
+#  MAIN SCAN LOGIC
+# ==============================================================
 
-# ========== Scanning Logic ==========
-def scan_target(target: str):
-    """Simulated target scanning process (replace with real scanner)."""
-    log(f"🧠 Scanning target: {target}")
-    time.sleep(0.8)  # Simulate scan duration
-
-    # Simulated errors for certain targets
-    if "staging" in target or "dev" in target:
-        raise RuntimeError(f"{target} seems unreachable or rate-limited.")
-
-    log(f"✅ Scan completed successfully: {target}")
-
-
-# ========== Main Worker Routine ==========
-def main():
-    log("🚀 Starting Deep Sentinel Worker Engine...")
-
-    # Check target list existence
+def load_targets():
+    """Load targets safely, raise clear error if missing."""
     if not os.path.exists(TARGET_FILE):
-        log_error("Target list not found!")
-        send_discord("⚠️ No target list found for Worker Sentinel.")
+        print(f"❌ ERROR: Target list not found at {TARGET_FILE}")
         sys.exit(1)
 
-    # Read targets
     with open(TARGET_FILE, "r", encoding="utf-8") as f:
         targets = [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
     if not targets:
-        log_error("Target list is empty — skipping scan.")
-        send_discord("⚠️ Worker Sentinel found no targets to scan.")
-        sys.exit(0)
+        print("❌ ERROR: Target list file is empty!")
+        sys.exit(1)
 
-    total = len(targets)
-    log(f"🔎 Loaded {total} targets from {TARGET_FILE}")
+    print(f"✅ Loaded {len(targets)} authorized targets.")
+    return targets
 
+def scan_target(target):
+    """Simulated scan process for target (extendable)."""
+    print(f"🔎 Scanning: {target}")
+    time.sleep(0.3)  # simulate scan delay
+    result = {"target": target, "status": "OK"}
+    return result
+
+def run_worker():
+    """Run the Deep Sentinel Worker Scan Engine."""
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🚀 Starting Deep Sentinel Worker Engine...")
+
+    targets = load_targets()
+    print(f"🧠 Initiating deep scan across {len(targets)} Bugcrowd targets...\n")
+
+    notify_discord("🧠 Deep Sentinel Worker Engine Started.")
+
+    results = []
     success = 0
-    fail = 0
 
-    for idx, target in enumerate(targets, 1):
+    for idx, target in enumerate(targets, start=1):
         try:
-            log(f"▶️ [{idx}/{total}] Processing {target}")
-            scan_target(target)
+            res = scan_target(target)
+            results.append(res)
             success += 1
+            print(f"✅ [{idx}/{len(targets)}] Done: {target}")
         except Exception as e:
-            fail += 1
-            log_error(f"Scan failed for {target}: {e}")
-            with open(ERROR_LOG, "a", encoding="utf-8") as ef:
-                traceback.print_exc(file=ef)
+            print(f"❌ [{idx}/{len(targets)}] Failed: {target} ({e})")
 
-    summary = f"✅ Success: {success} | ❌ Failed: {fail} | Total: {total}"
-    log(summary)
+    print("\n🧩 Summary Report")
+    print("--------------------------------------------------")
+    print(f"🟢 Total Scanned: {len(targets)}")
+    print(f"✅ Success: {success}")
+    print(f"🔴 Failed: {len(targets) - success}")
+    print("--------------------------------------------------")
 
-    if fail > 0:
-        send_discord(f"⚠️ Worker Sentinel finished with errors:\n```\n{summary}\n```")
-    else:
-        send_discord(f"✅ Worker Sentinel finished successfully.\n```\n{summary}\n```")
+    notify_discord(f"✅ Deep Sentinel Worker finished.\n🟢 Scanned: {len(targets)} | ✅ Success: {success}")
 
+# ==============================================================
+#  ENTRY POINT
+# ==============================================================
 
 if __name__ == "__main__":
     try:
-        main()
-    except Exception as main_err:
-        log_error(f"🔥 Fatal engine error: {main_err}")
-        send_discord(f"🔥 Fatal error in Worker Sentinel:\n```\n{main_err}\n```")
+        run_worker()
+        sys.exit(0)
+    except KeyboardInterrupt:
+        print("🛑 Interrupted by user.")
+        notify_discord("🛑 Sentinel Worker Interrupted.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"💀 Fatal Error: {e}")
+        notify_discord(f"💀 Fatal Error: {e}")
         sys.exit(1)
