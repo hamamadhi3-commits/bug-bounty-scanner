@@ -1,18 +1,19 @@
-name: 🧠 Digital Sentinel PRIME v4.1 – Autonomous Dispatch System
+name: 🧠 Digital Sentinel PRIME v4.2 – Autonomous Dispatch System (Fixed)
 
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 */6 * * *"    # هەر 6 کاتژمێرێک بەخۆی کار بکات
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   actions: write
   id-token: write
 
 jobs:
   update_and_dispatch:
     strategy:
+      fail-fast: false
       matrix:
         worker: [1, 2, 3, 4]
     runs-on: ubuntu-latest
@@ -36,24 +37,20 @@ jobs:
         run: |
           pip install requests pyyaml
 
-      - name: 🧠 Install GitHub CLI
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y gh
-          gh auth setup-git
-          echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
-
       - name: 🔍 Update Target List
         run: |
-          echo "🔄 Fetching updated targets..."
-          python3 src/update_targets.py || echo "No new targets."
+          echo "🔄 Updating bug bounty targets..."
+          python3 src/update_targets.py || echo "⚠️ No updates found."
 
       - name: 🚀 Dispatch Scans to Workers
         run: |
           echo "📡 Dispatching Worker #${{ matrix.worker }}"
-          gh workflow run "worker-sentinel.yml" \
-            -f worker_id=${{ matrix.worker }} \
-            --ref main
+          curl -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/worker-sentinel.yml/dispatches \
+            -d "{\"ref\":\"main\",\"inputs\":{\"worker_id\":\"${{ matrix.worker }}`\"}}"
+          echo "✅ Worker #${{ matrix.worker }} dispatched."
 
       - name: 🤖 Generate AI Summary Report
         run: |
@@ -65,7 +62,7 @@ jobs:
         run: |
           if [ -n "${{ secrets.DISCORD_WEBHOOK_URL }}" ]; then
             curl -H "Content-Type: application/json" \
-              -d "{\"content\": \"✅ Digital Sentinel PRIME v4.1 (Worker #${{ matrix.worker }}) cycle complete.\"}" \
+              -d "{\"content\": \"✅ Digital Sentinel PRIME v4.2 (Worker #${{ matrix.worker }}) cycle complete.\"}" \
               "${{ secrets.DISCORD_WEBHOOK_URL }}"
           else
             echo "⚠️ Discord webhook not configured."
