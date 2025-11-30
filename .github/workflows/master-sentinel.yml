@@ -1,81 +1,49 @@
-name: 🛰️ Digital Sentinel PRIME v3.0
+name: 🧠 Digital Sentinel PRIME v3.1
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: "0 */6 * * *"
   workflow_dispatch:
 
 jobs:
   update_and_dispatch:
+    strategy:
+      matrix:
+        worker: [1, 2, 3, 4]  # ٤ worker پارالێڵ
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
 
     steps:
-      - name: 📥 Checkout repository
+      - name: 📥 Checkout repo
         uses: actions/checkout@v4
 
       - name: ⚙️ Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.x'
 
       - name: 🧩 Install dependencies
         run: |
-          python3 -m pip install --upgrade pip
-          pip install requests beautifulsoup4 openai rich
+          pip install requests pyyaml
 
       - name: 🧠 Update target list from Bugcrowd
         run: |
-          echo "🔍 Fetching new targets from Bugcrowd..."
-          mkdir -p logs                       # ✅ فولدەری logs دروست بکە
-          python3 update_targets.py > logs/update_$(date +%Y%m%d_%H%M%S).log || exit 1
-          echo "✅ Target list updated successfully"
+          echo "🔍 Fetching new targets..."
+          python3 src/update_targets.py || echo "No new targets."
 
       - name: 🚀 Dispatch scans for all targets
         run: |
-          mkdir -p logs
-          echo "🎯 Starting scan dispatch from updated list..."
-          if [ ! -f "bug_bounty_targets.txt" ]; then
-            echo "❌ Target file not found!"
-            exit 1
-          fi
+          echo "📡 Dispatching to worker #${{ matrix.worker }}..."
+          python3 src/dispatch_scans.py --worker ${{ matrix.worker }}
 
-          TARGETS=$(grep -v '^#' bug_bounty_targets.txt | grep -v '^$' | head -203)
-          SCAN_ID=$(date +%s)
-          DISPATCHED=0
-
-          for target in $TARGETS; do
-            echo "📡 Dispatching scan for: $target" | tee -a logs/dispatch_${SCAN_ID}.log
-            sleep 4
-            ((DISPATCHED++))
-          done
-
-          echo "✅ Total dispatched: $DISPATCHED scans" | tee -a logs/dispatch_${SCAN_ID}.log
-          echo "dispatched=$DISPATCHED" >> $GITHUB_OUTPUT
-
-      - name: 🧾 Generate AI Summary Report
+      - name: 🤖 Generate AI Summary Report
         run: |
-          echo "🤖 Generating AI Summary..."
-          python3 src/ai_report.py
+          echo "🧠 Generating AI summary..."
+          python3 src/ai_report.py || true
 
-      - name: 📢 Send summary to Discord
+      - name: 📣 Send summary to Discord
         if: always()
         run: |
-          REPORT=$(cat logs/ai_summary.txt || echo "No report generated.")
-          DISPATCHED="${{ steps.dispatch.outputs.dispatched || '0' }}"
           curl -H "Content-Type: application/json" \
-            -d "{
-              \"embeds\": [{
-                \"title\": \"🛰️ Digital Sentinel PRIME Report\",
-                \"description\": \"$REPORT\",
-                \"color\": 16753920,
-                \"fields\": [
-                  {\"name\": \"🎯 Targets Updated\", \"value\": \"203\", \"inline\": true},
-                  {\"name\": \"📡 Scans Dispatched\", \"value\": \"$DISPATCHED\", \"inline\": true},
-                  {\"name\": \"🧠 AI Analysis\", \"value\": \"Enabled\", \"inline\": true},
-                  {\"name\": \"⏰ Next Cycle\", \"value\": \"6 hours\", \"inline\": true}
-                ],
-                \"footer\": {\"text\": \"Digital Sentinel PRIME v3.0\"},
-                \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-              }]
-            }" "${{ secrets.DISCORD_WEBHOOK_URL }}" 2>/dev/null || true
+          -d "{\"content\": \"✅ Digital Sentinel PRIME (Worker #${{ matrix.worker }}) cycle complete.\"}" \
+          "${{ secrets.DISCORD_WEBHOOK_URL }}"
