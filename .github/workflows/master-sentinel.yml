@@ -3,7 +3,8 @@ name: 🧠 Digital Sentinel PRIME v4.0 – Deep Autonomous Hunter
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"  # کارکردن هەموو 6 کاتژمێر جارێک
+    - cron: "0 */6 * * *"  # هەموو 6 کاتژمێر کاردەکات
+    - cron: "0 18 * * *"   # هەموو ڕۆژ کاتژمێری ٦ی ئێوارە بۆ dashboard
 
 jobs:
   update_and_dispatch:
@@ -19,7 +20,7 @@ jobs:
 
       - name: 📦 Install dependencies
         run: |
-          pip install -r requirements.txt || pip install requests
+          pip install -r requirements.txt || pip install requests pyyaml
 
       - name: 🧭 Update target list from Bugcrowd
         run: python3 src/update_targets.py
@@ -35,14 +36,9 @@ jobs:
       - name: 📢 Send summary to Discord
         run: python3 src/discord_notify.py || echo "No Discord summary."
 
-  # -----------------------------
-  # 🧠 DAILY DASHBOARD JOB
-  # -----------------------------
   daily_dashboard:
     runs-on: ubuntu-latest
     needs: update_and_dispatch
-    schedule:
-      - cron: "0 18 * * *"  # ڕاپۆرتی ڕۆژانە لە کاتژمێری ٦ی ئێوارە بە UTC
     steps:
       - name: 📥 Checkout repo
         uses: actions/checkout@v4
