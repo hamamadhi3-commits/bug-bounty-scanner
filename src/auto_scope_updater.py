@@ -2,27 +2,25 @@
 # -*- coding: utf-8 -*-
 """
 ♻️ Auto Scope Updater – Digital Sentinel v5.0
-Keeps target scopes refreshed every 6 hours.
+Keeps Bugcrowd scopes fresh on every cycle.
 """
 
-import os
-import time
-import subprocess
+import os, time, subprocess
 
-LOG_FILE = "logs/auto_updater.log"
+LOG_FILE = "logs/auto_scope_updater.log"
 os.makedirs("logs", exist_ok=True)
 
 def log(msg):
-    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(f"[{timestamp}] {msg}\n")
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
     print(msg)
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(f"[{ts}] {msg}\n")
 
 def main():
-    log("🔁 Running auto scope updater...")
+    log("🔁 Running Auto Scope Updater...")
     try:
         subprocess.run(["python3", "src/scope_fetcher.py"], check=True)
-        log("✅ Scope updated successfully.")
+        log("✅ Scopes updated successfully.")
     except Exception as e:
         log(f"❌ Scope update failed: {e}")
 
