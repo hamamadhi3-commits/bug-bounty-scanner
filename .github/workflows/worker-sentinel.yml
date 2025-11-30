@@ -5,31 +5,46 @@ on:
     types: [scan_target]
 
 jobs:
-  deep_scan:
+  scan_target:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 30
 
     steps:
-      - name: 📦 Checkout Repo
+      - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: ⚙️ Setup Environment
+      - name: ⚙️ Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      - name: 🔧 Install Dependencies
+      - name: 📦 Install dependencies
         run: |
-          pip install aiohttp requests beautifulsoup4
+          pip install requests pyyaml
 
-      - name: 🔍 Run Deep Scan
+      - name: 🧠 Run Worker Scan
         run: |
-          python3 src/scan_engine.py --mode deep --worker ${{ github.event.client_payload.worker_id }}
+          mkdir -p logs
+          echo "🚀 Starting worker scan..." > logs/worker_${{ github.run_id }}.log
+          python3 src/scan_engine.py >> logs/worker_${{ github.run_id }}.log 2>&1 || echo "❌ Worker failed." >> logs/errors.log
 
-      - name: 📊 Generate Report
-        run: |
-          python3 src/auto_report.py
+      - name: 🧾 Upload logs as artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker_logs_${{ github.run_id }}
+          path: logs/
 
-      - name: 📣 Notify Discord
+      - name: 📢 Send summary to Discord
+        if: always()
         run: |
-          python3 src/discord_notify.py
+          if [ -s logs/errors.log ]; then
+            ERROR_MSG=$(tail -n 10 logs/errors.log)
+            curl -H "Content-Type: application/json" \
+              -d "{\"content\": \"⚠️ Worker Sentinel detected errors:\n\`\`\`${ERROR_MSG}\`\`\`\"}" \
+              "${{ secrets.DISCORD_WEBHOOK_URL }}"
+          else
+            curl -H "Content-Type: application/json" \
+              -d "{\"content\": \"✅ Worker Sentinel cycle complete — no errors.\"}" \
+              "${{ secrets.DISCORD_WEBHOOK_URL }}"
+          fi
