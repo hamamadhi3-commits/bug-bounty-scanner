@@ -1,18 +1,13 @@
-name: ⚡ Worker Sentinel – Deep Mode v4.1
+name: ⚡ Worker Sentinel – Auto Evolution v5.0
 
 on:
-  repository_dispatch:
-    types: [worker_dispatch]
   workflow_dispatch:
-    inputs:
-      worker_id:
-        description: "Manual Worker ID (Optional)"
-        required: false
+  schedule:
+    - cron: "0 */6 * * *"  # Every 6 hours
 
 jobs:
   scan_target:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,23 +17,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install modules
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests aiohttp
+      - name: Install dependencies
+        run: pip install requests
 
-      - name: Run Deep Sentinel Worker
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          WORKER_ID: ${{ github.event.client_payload.worker_id || github.event.inputs.worker_id }}
-        run: |
-          echo "⚙️ Starting Worker Sentinel #${WORKER_ID}..."
-          python3 src/scan_engine.py --worker ${WORKER_ID} || echo "⚠️ Worker ${WORKER_ID} encountered an issue"
+      - name: Run Deep Parallel Scan
+        run: python3 src/scan_engine_parallel.py
 
-      - name: Report to Discord
-        if: always()
-        run: |
-          curl -H "Content-Type: application/json" \
-            -d "{\"content\": \"✅ Digital Sentinel PRIME v4.1 (Worker #${{ github.event.client_payload.worker_id || github.event.inputs.worker_id }}) completed its cycle successfully.\"}" \
-            ${{ secrets.DISCORD_WEBHOOK_URL }}
+      - name: Run Evolution Step
+        run: python3 src/self_evolution.py
+
+      - name: Scheduler (Cool-down control)
+        run: python3 src/scheduler_engine.py
