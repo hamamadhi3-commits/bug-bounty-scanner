@@ -1,16 +1,29 @@
-name: 🧠 Digital Sentinel PRIME v4.0 – Deep Autonomous Hunter
+name: 🧠 Digital Sentinel PRIME v4.1 – Autonomous Dispatch System
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"  # هەموو 6 کاتژمێر کاردەکات
-    - cron: "0 18 * * *"   # هەموو ڕۆژ کاتژمێری ٦ی ئێوارە بۆ dashboard
+    - cron: "0 */6 * * *"   # هەر ٦ کاتژمێر جارێک
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+  id-token: write
 
 jobs:
   update_and_dispatch:
+    strategy:
+      matrix:
+        worker: [1, 2, 3, 4]   # ٤ Worker پارالێڵ
     runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
     steps:
-      - name: 📥 Checkout repository
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
       - name: ⚙️ Set up Python
@@ -18,37 +31,34 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: 📦 Install dependencies
+      - name: 🧩 Install Dependencies
         run: |
-          pip install -r requirements.txt || pip install requests pyyaml
+          pip install requests pyyaml
 
-      - name: 🧭 Update target list from Bugcrowd
-        run: python3 src/update_targets.py
-
-      - name: 🚀 Dispatch scans for all targets
+      - name: 🔍 Update Target List
         run: |
-          echo "📡 Dispatching Deep Scan to all 4 parallel workers..."
-          python3 src/dispatch_scans.py || echo "⚠️ Dispatch failed, skipping."
+          echo "🔄 Fetching updated targets from Bugcrowd..."
+          python3 src/update_targets.py || echo "No new targets found."
+
+      - name: 🚀 Dispatch Scans to Workers
+        run: |
+          echo "📡 Dispatching scan to worker #${{ matrix.worker }}"
+          gh workflow run "worker-sentinel.yml" \
+            -f worker_id=${{ matrix.worker }} \
+            -r main
 
       - name: 🤖 Generate AI Summary Report
-        run: python3 src/ai_report.py || echo "No AI report generated."
-
-      - name: 📢 Send summary to Discord
-        run: python3 src/discord_notify.py || echo "No Discord summary."
-
-  daily_dashboard:
-    runs-on: ubuntu-latest
-    needs: update_and_dispatch
-    steps:
-      - name: 📥 Checkout repo
-        uses: actions/checkout@v4
-
-      - name: ⚙️ Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: 🧠 Generate Daily Dashboard Report
         run: |
-          pip install requests
-          python3 src/monitor_dashboard.py
+          echo "🧠 Generating AI summary..."
+          python3 src/ai_report.py || true
+
+      - name: 📣 Send Summary to Discord
+        if: always()
+        run: |
+          if [ -n "${{ secrets.DISCORD_WEBHOOK_URL }}" ]; then
+            curl -H "Content-Type: application/json" \
+              -d "{\"content\": \"✅ Digital Sentinel PRIME v4.1 (Worker #${{ matrix.worker }}) completed its cycle successfully.\"}" \
+              "${{ secrets.DISCORD_WEBHOOK_URL }}"
+          else
+            echo "⚠️ Discord webhook not configured."
+          fi
