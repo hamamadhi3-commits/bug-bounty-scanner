@@ -7,7 +7,7 @@ on:
 jobs:
   scan_target:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: 📥 Checkout repository
@@ -22,13 +22,17 @@ jobs:
         run: |
           pip install requests pyyaml
 
-      - name: 🧠 Run Worker Scan
+      - name: 🧠 Run Deep Scan Engine
         run: |
           mkdir -p logs
-          echo "🚀 Starting worker scan..." > logs/worker_${{ github.run_id }}.log
-          python3 src/scan_engine.py >> logs/worker_${{ github.run_id }}.log 2>&1 || echo "❌ Worker failed." >> logs/errors.log
+          echo "🚀 Starting Deep Scan..." > logs/worker_${{ github.run_id }}.log
+          {
+            python3 src/scan_engine.py >> logs/worker_${{ github.run_id }}.log 2>&1
+          } || {
+            echo "❌ [$(date)] Worker failed during scan execution." >> logs/errors.log
+          }
 
-      - name: 🧾 Upload logs as artifacts
+      - name: 🧾 Upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -41,10 +45,10 @@ jobs:
           if [ -s logs/errors.log ]; then
             ERROR_MSG=$(tail -n 10 logs/errors.log)
             curl -H "Content-Type: application/json" \
-              -d "{\"content\": \"⚠️ Worker Sentinel detected errors:\n\`\`\`${ERROR_MSG}\`\`\`\"}" \
+              -d "{\"content\": \"⚠️ Worker Sentinel failed:\n\`\`\`${ERROR_MSG}\`\`\`\"}" \
               "${{ secrets.DISCORD_WEBHOOK_URL }}"
           else
             curl -H "Content-Type: application/json" \
-              -d "{\"content\": \"✅ Worker Sentinel cycle complete — no errors.\"}" \
+              -d "{\"content\": \"✅ Worker Sentinel completed successfully – no errors.\"}" \
               "${{ secrets.DISCORD_WEBHOOK_URL }}"
           fi
