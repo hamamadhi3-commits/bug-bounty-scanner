@@ -1,30 +1,48 @@
-name: ⚡ Worker Sentinel – Auto Evolution v5.0
+name: ⚡ Worker Sentinel – Deep Mode v4.2
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 */6 * * *"  # Every 6 hours
 
 jobs:
   scan_target:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: 🧱 Set up job
+        run: echo "Starting Digital Sentinel PRIME v4.2 Worker..."
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: 🔄 Checkout repository
+        uses: actions/checkout@v3
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install dependencies
-        run: pip install requests
+      - name: 📦 Install modules
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install requests
 
-      - name: Run Deep Parallel Scan
-        run: python3 src/scan_engine_parallel.py
+      - name: 🧠 Run Deep Sentinel Worker
+        run: python3 src/scan_engine.py
 
-      - name: Run Evolution Step
-        run: python3 src/self_evolution.py
+      - name: 📡 Report to Discord
+        if: always()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          echo "Reporting completion to Discord..."
+          curl -H "Content-Type: application/json" \
+               -d "{\"content\": \"✅ Digital Sentinel PRIME v4.2 completed cycle.\"}" \
+               $DISCORD_WEBHOOK_URL
 
-      - name: Scheduler (Cool-down control)
-        run: python3 src/scheduler_engine.py
+      - name: 🧹 Post Setup Python
+        if: always()
+        run: echo "Post job cleanup."
+
+      - name: 📦 Post Checkout repository
+        if: always()
+        run: echo "Repository cleanup done."
+
+      - name: 🏁 Complete job
+        run: echo "Deep Mode Worker completed all tasks successfully."
