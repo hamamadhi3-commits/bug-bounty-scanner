@@ -1,0 +1,47 @@
+name: 🌐 Recon Sentinel Engine v5.0
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Run every 6 hours
+    - cron: "0 */6 * * *"
+
+jobs:
+  recon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: 🧠 Install Dependencies
+        run: |
+          pip install requests beautifulsoup4 aiohttp
+
+      - name: 🛰️ Fetch Bugcrowd Program Scopes
+        run: |
+          echo "🚀 Fetching Bugcrowd program scopes..."
+          python3 src/scope_fetcher.py
+
+      - name: 🔍 Run Recon Engine
+        run: |
+          echo "🔎 Running recon scan..."
+          python3 src/recon_engine.py
+
+      - name: ♻️ Auto Scope Update
+        run: |
+          echo "♻️ Running auto-scope updater..."
+          python3 src/auto_scope_updater.py
+
+      - name: 📣 Notify Discord
+        if: always()
+        run: |
+          curl -H "Content-Type: application/json" \
+          -d "{\"content\": \"✅ Recon Sentinel cycle completed successfully (Digital Sentinel v5.0).\"}" \
+          "${{ secrets.DISCORD_WEBHOOK_URL }}"
