@@ -1,16 +1,23 @@
-name: ⚡ Worker Sentinel – Deep Mode
+name: ⚡ Worker Sentinel – Deep Mode v4.1
 
 on:
-  repository_dispatch:
-    types: [scan_target]
+  workflow_dispatch:
+    inputs:
+      worker_id:
+        description: "Worker Number"
+        required: true
 
 jobs:
   scan_target:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
     steps:
-      - name: 📥 Checkout repository
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
       - name: ⚙️ Set up Python
@@ -18,37 +25,37 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: 📦 Install dependencies
+      - name: 🧩 Install Dependencies
         run: |
           pip install requests pyyaml
 
-      - name: 🧠 Run Deep Scan Engine
+      - name: 🧠 Execute Deep Scan Engine
         run: |
           mkdir -p logs
-          echo "🚀 Starting Deep Scan..." > logs/worker_${{ github.run_id }}.log
+          echo "🚀 Starting Deep Mode scan for Worker #${{ github.event.inputs.worker_id }}" > logs/worker_${{ github.run_id }}.log
           {
             python3 src/scan_engine.py >> logs/worker_${{ github.run_id }}.log 2>&1
           } || {
-            echo "❌ [$(date)] Worker failed during scan execution." >> logs/errors.log
+            echo "❌ [$(date)] Worker #${{ github.event.inputs.worker_id }} failed." >> logs/errors.log
           }
 
-      - name: 🧾 Upload logs
+      - name: 📦 Upload Logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: worker_logs_${{ github.run_id }}
           path: logs/
 
-      - name: 📢 Send summary to Discord
+      - name: 📢 Send Final Status to Discord
         if: always()
         run: |
           if [ -s logs/errors.log ]; then
             ERROR_MSG=$(tail -n 10 logs/errors.log)
             curl -H "Content-Type: application/json" \
-              -d "{\"content\": \"⚠️ Worker Sentinel failed:\n\`\`\`${ERROR_MSG}\`\`\`\"}" \
+              -d "{\"content\": \"⚠️ Worker #${{ github.event.inputs.worker_id }} failed:\n\`\`\`${ERROR_MSG}\`\`\`\"}" \
               "${{ secrets.DISCORD_WEBHOOK_URL }}"
           else
             curl -H "Content-Type: application/json" \
-              -d "{\"content\": \"✅ Worker Sentinel completed successfully – no errors.\"}" \
+              -d "{\"content\": \"✅ Worker #${{ github.event.inputs.worker_id }} completed successfully – no errors.\"}" \
               "${{ secrets.DISCORD_WEBHOOK_URL }}"
           fi
