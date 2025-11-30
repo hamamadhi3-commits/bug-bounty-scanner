@@ -27,6 +27,7 @@ jobs:
       - name: 🧠 Update target list from Bugcrowd
         run: |
           echo "🔍 Fetching new targets from Bugcrowd..."
+          mkdir -p logs                       # ✅ فولدەری logs دروست بکە
           python3 update_targets.py > logs/update_$(date +%Y%m%d_%H%M%S).log || exit 1
           echo "✅ Target list updated successfully"
 
