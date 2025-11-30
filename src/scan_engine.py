@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-⚡ Digital Sentinel PRIME v4.1 – Deep Mode Worker
-Self-logging, self-recovery scan engine.
+⚡ Digital Sentinel PRIME v4.2 – Deep Mode Worker
+Self-logging, resilient, auto-recovery scanning engine for authorized Bugcrowd targets.
 """
 
 import os
@@ -12,12 +12,9 @@ import traceback
 import requests
 from datetime import datetime
 
-# ====== CONFIGURATION ======
+# ========== Configuration ==========
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL")
-
-# 🔧 FIXED: file now correctly points to main project root
-TARGET_FILE = "bug_bounty_targets.txt"
-
+TARGET_FILE = "targets/bugcrowd_203.txt"  # Main target list
 LOG_DIR = "logs"
 ERROR_LOG = os.path.join(LOG_DIR, "errors.log")
 MAIN_LOG = os.path.join(LOG_DIR, f"worker_{int(time.time())}.log")
@@ -25,8 +22,9 @@ MAIN_LOG = os.path.join(LOG_DIR, f"worker_{int(time.time())}.log")
 # Ensure log directory exists
 os.makedirs(LOG_DIR, exist_ok=True)
 
-# ====== LOGGING UTILITIES ======
-def log(msg):
+
+# ========== Logging ==========
+def log(msg: str):
     """Write message to log file and stdout."""
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{timestamp}] {msg}"
@@ -34,7 +32,8 @@ def log(msg):
     with open(MAIN_LOG, "a", encoding="utf-8") as f:
         f.write(line + "\n")
 
-def log_error(msg):
+
+def log_error(msg: str):
     """Record critical error message."""
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     err_line = f"[{timestamp}] ❌ ERROR: {msg}"
@@ -42,8 +41,9 @@ def log_error(msg):
         ef.write(err_line + "\n")
     log(err_line)
 
-def send_discord(msg):
-    """Send notification to Discord."""
+
+def send_discord(msg: str):
+    """Send notification to Discord channel."""
     if not DISCORD_WEBHOOK:
         log("⚠️ Discord webhook not set; skipping send.")
         return
@@ -53,25 +53,31 @@ def send_discord(msg):
     except Exception as e:
         log_error(f"Failed to send Discord message: {e}")
 
-# ====== SCAN ENGINE ======
-def scan_target(target):
-    """Dummy scan logic placeholder (replace with real scanner)."""
+
+# ========== Scanning Logic ==========
+def scan_target(target: str):
+    """Simulated target scanning process (replace with real scanner)."""
     log(f"🧠 Scanning target: {target}")
-    time.sleep(1.2)  # simulate scan delay
-    # simulate random failure
-    if "dev" in target or "staging" in target:
-        raise RuntimeError(f"Target {target} seems unreachable or rate-limited.")
-    log(f"✅ Scan completed: {target}")
+    time.sleep(0.8)  # Simulate scan duration
 
-# ====== MAIN EXECUTION ======
+    # Simulated errors for certain targets
+    if "staging" in target or "dev" in target:
+        raise RuntimeError(f"{target} seems unreachable or rate-limited.")
+
+    log(f"✅ Scan completed successfully: {target}")
+
+
+# ========== Main Worker Routine ==========
 def main():
-    log("🚀 Starting Deep Worker Sentinel Scan Engine...")
+    log("🚀 Starting Deep Sentinel Worker Engine...")
 
+    # Check target list existence
     if not os.path.exists(TARGET_FILE):
         log_error("Target list not found!")
         send_discord("⚠️ No target list found for Worker Sentinel.")
         sys.exit(1)
 
+    # Read targets
     with open(TARGET_FILE, "r", encoding="utf-8") as f:
         targets = [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
@@ -81,7 +87,7 @@ def main():
         sys.exit(0)
 
     total = len(targets)
-    log(f"🔎 Loaded {total} targets.")
+    log(f"🔎 Loaded {total} targets from {TARGET_FILE}")
 
     success = 0
     fail = 0
@@ -94,7 +100,8 @@ def main():
         except Exception as e:
             fail += 1
             log_error(f"Scan failed for {target}: {e}")
-            traceback.print_exc(file=open(ERROR_LOG, "a", encoding="utf-8"))
+            with open(ERROR_LOG, "a", encoding="utf-8") as ef:
+                traceback.print_exc(file=ef)
 
     summary = f"✅ Success: {success} | ❌ Failed: {fail} | Total: {total}"
     log(summary)
@@ -104,11 +111,11 @@ def main():
     else:
         send_discord(f"✅ Worker Sentinel finished successfully.\n```\n{summary}\n```")
 
-# ====== ENTRY POINT ======
+
 if __name__ == "__main__":
     try:
         main()
     except Exception as main_err:
-        log_error(f"Fatal engine error: {main_err}")
+        log_error(f"🔥 Fatal engine error: {main_err}")
         send_discord(f"🔥 Fatal error in Worker Sentinel:\n```\n{main_err}\n```")
         sys.exit(1)
