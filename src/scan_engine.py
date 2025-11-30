@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-⚡ Digital Sentinel PRIME v4.0 – Deep Mode Worker
+⚡ Digital Sentinel PRIME v4.1 – Deep Mode Worker
 Self-logging, self-recovery scan engine.
 """
 
@@ -12,14 +12,20 @@ import traceback
 import requests
 from datetime import datetime
 
+# ====== CONFIGURATION ======
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL")
-TARGET_FILE = "targets/bug_bounty_targets.txt"
+
+# 🔧 FIXED: file now correctly points to main project root
+TARGET_FILE = "bug_bounty_targets.txt"
+
 LOG_DIR = "logs"
 ERROR_LOG = os.path.join(LOG_DIR, "errors.log")
 MAIN_LOG = os.path.join(LOG_DIR, f"worker_{int(time.time())}.log")
 
+# Ensure log directory exists
 os.makedirs(LOG_DIR, exist_ok=True)
 
+# ====== LOGGING UTILITIES ======
 def log(msg):
     """Write message to log file and stdout."""
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
@@ -47,6 +53,7 @@ def send_discord(msg):
     except Exception as e:
         log_error(f"Failed to send Discord message: {e}")
 
+# ====== SCAN ENGINE ======
 def scan_target(target):
     """Dummy scan logic placeholder (replace with real scanner)."""
     log(f"🧠 Scanning target: {target}")
@@ -56,6 +63,7 @@ def scan_target(target):
         raise RuntimeError(f"Target {target} seems unreachable or rate-limited.")
     log(f"✅ Scan completed: {target}")
 
+# ====== MAIN EXECUTION ======
 def main():
     log("🚀 Starting Deep Worker Sentinel Scan Engine...")
 
@@ -65,7 +73,7 @@ def main():
         sys.exit(1)
 
     with open(TARGET_FILE, "r", encoding="utf-8") as f:
-        targets = [line.strip() for line in f if line.strip()]
+        targets = [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
     if not targets:
         log_error("Target list is empty — skipping scan.")
@@ -96,6 +104,7 @@ def main():
     else:
         send_discord(f"✅ Worker Sentinel finished successfully.\n```\n{summary}\n```")
 
+# ====== ENTRY POINT ======
 if __name__ == "__main__":
     try:
         main()
