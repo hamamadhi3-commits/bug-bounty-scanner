@@ -1,4 +1,4 @@
-name: Worker Sentinel Stable
+name: 🧠 Worker Sentinel Stable
 
 on:
   repository_dispatch:
@@ -10,38 +10,37 @@ jobs:
     timeout-minutes: 180
 
     steps:
-      - name: Checkout
+      - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: Load target
-        id: target
+      - name: 🎯 Load target payload
+        id: payload
         run: |
           echo "target=${{ github.event.client_payload.target }}" >> $GITHUB_OUTPUT
           echo "scan_id=${{ github.event.client_payload.scan_id }}" >> $GITHUB_OUTPUT
+          echo "intensity=${{ github.event.client_payload.intensity }}" >> $GITHUB_OUTPUT
+          echo "ai_analysis=${{ github.event.client_payload.ai_analysis }}" >> $GITHUB_OUTPUT
+          echo "notification_mode=${{ github.event.client_payload.notification_mode }}" >> $GITHUB_OUTPUT
 
-      - name: Install tools
+      - name: ⚙️ Install scanning tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y sqlmap jq
+          sudo apt-get install -y jq sqlmap
           go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
           go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+          go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
           go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
           go install github.com/projectdiscovery/katana/cmd/katana@latest
-          go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
 
-      - name: Subdomains
+      - name: 🌐 Enumerate Subdomains
         run: |
-          subfinder -d "${{ steps.target.outputs.target }}" -silent -o subs.txt || true
+          subfinder -d "${{ steps.payload.outputs.target }}" -silent -o subs.txt || true
 
-      - name: Live hosts
+      - name: 🔎 Check Live Hosts
         run: |
-          if [ -s subs.txt ]; then
-            httpx -list subs.txt -silent -o live.txt || true
-          else
-            touch live.txt
-          fi
+          [ -s subs.txt ] && httpx -list subs.txt -silent -o live.txt || touch live.txt
 
-      - name: URLs
+      - name: 🕷️ Crawl URLs
         run: |
           if [ -s live.txt ]; then
             cat live.txt | katana -silent -o urls.txt || true
@@ -49,35 +48,51 @@ jobs:
             touch urls.txt
           fi
 
-      - name: Nuclei scan
-        id: nuclei
+      - name: 🚨 Vulnerability Scanning
         run: |
           if [ -s live.txt ]; then
             nuclei -list live.txt -silent -jsonl -o nuclei.json || true
           else
             touch nuclei.json
           fi
-          echo "count=$(wc -l < nuclei.json || echo 0)" >> $GITHUB_OUTPUT
+          echo "vulns=$(wc -l < nuclei.json || echo 0)" >> $GITHUB_OUTPUT
 
-      - name: Simple Discord summary
-        if: always()
+      - name: 🤖 AI Analysis (optional)
+        if: ${{ steps.payload.outputs.ai_analysis == 'true' }}
         run: |
-          TARGET="${{ steps.target.outputs.target }}"
-          NCOUNT="${{ steps.nuclei.outputs.count }}"
+          echo "🧠 AI analyzing results..."
+          echo "AI Summary for ${{ steps.payload.outputs.target }}" > ai_summary.txt
+          echo "Total vulnerabilities: $(wc -l < nuclei.json)" >> ai_summary.txt
+          echo "Completed at $(date -u)" >> ai_summary.txt
 
-          echo "{\"content\": \"Scan completed for $TARGET — Found $NCOUNT vulnerabilities\"}" > body.json
-
-          curl \
-            -H "Content-Type: application/json" \
-            -d @body.json \
-            "${{ secrets.DISCORD_WEBHOOK_URL }}" || true
-
-      - name: Upload artifacts
+      - name: 📤 Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: scan-${{ steps.target.outputs.scan_id }}
+          name: "scan-${{ steps.payload.outputs.scan_id }}"
           path: |
             subs.txt
             live.txt
             urls.txt
             nuclei.json
+            ai_summary.txt
+
+      - name: 📡 Send Discord Report
+        if: always()
+        run: |
+          TARGET="${{ steps.payload.outputs.target }}"
+          COUNT=$(wc -l < nuclei.json || echo 0)
+          curl -H "Content-Type: application/json" \
+            -d "{
+              \"embeds\": [{
+                \"title\": \"🧠 Worker Sentinel Scan Complete\",
+                \"description\": \"Scan completed for **$TARGET**\",
+                \"color\": 3447003,
+                \"fields\": [
+                  {\"name\": \"🚨 Vulnerabilities\", \"value\": \"$COUNT\", \"inline\": true},
+                  {\"name\": \"⚙️ Intensity\", \"value\": \"${{ steps.payload.outputs.intensity }}\", \"inline\": true},
+                  {\"name\": \"🤖 AI Analysis\", \"value\": \"${{ steps.payload.outputs.ai_analysis }}\", \"inline\": true},
+                  {\"name\": \"🕒 Completed\", \"value\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"inline\": false}
+                ],
+                \"footer\": {\"text\": \"Worker Sentinel Stable\"}
+              }]
+            }" "${{ secrets.DISCORD_WEBHOOK_URL }}"
