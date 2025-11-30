@@ -32,10 +32,10 @@ jobs:
         run: |
           echo "🚀 Dispatching Worker Sentinel #${WORKER_ID}"
           curl -X POST \
-            -H "Authorization: token ${TOKEN}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/worker-sentinel.yml/dispatches \
-            -d "{\"ref\":\"main\", \"inputs\":{\"worker_id\":\"${WORKER_ID}\"}}"
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/dispatches \
+            -d "{\"event_type\":\"worker_dispatch\",\"client_payload\":{\"worker_id\":\"${WORKER_ID}\"}}"
 
       - name: ✅ Send completion message
         if: always()
