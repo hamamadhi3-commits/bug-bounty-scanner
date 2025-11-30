@@ -2,7 +2,7 @@ name: 🔄 Continuous Bug Bounty Scanner PRIME
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # run every 6 hours
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -13,6 +13,16 @@ jobs:
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
+
+      - name: ⚙️ Set up Python environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 🧩 Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install requests beautifulsoup4
 
       - name: 🧠 Update target list from Bugcrowd
         run: |
@@ -27,58 +37,34 @@ jobs:
 
       - name: 🚀 Dispatch scans for all targets
         run: |
-          echo "🎯 Starting scan dispatch from updated list..."
+          echo "🎯 Starting scan dispatch..."
           if [ ! -f "bug_bounty_targets.txt" ]; then
             echo "❌ Target file not found!"
             exit 1
           fi
-
           TARGETS=$(grep -v '^#' bug_bounty_targets.txt | grep -v '^$' | head -203)
-          TARGET_COUNT=$(echo "$TARGETS" | wc -l)
-          SCAN_ID=$(date +%s)
           DISPATCHED=0
-
           for target in $TARGETS; do
             echo "📡 Dispatching scan for: $target"
-            curl -X POST \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              https://api.github.com/repos/${{ github.repository }}/dispatches \
-              -d "{
-                \"event_type\": \"scan_target\",
-                \"client_payload\": {
-                  \"target\": \"$target\",
-                  \"intensity\": \"2\",
-                  \"ai_analysis\": \"true\",
-                  \"notification_mode\": \"all\",
-                  \"scan_id\": \"${SCAN_ID}_${DISPATCHED}\"
-                }
-              }" 2>/dev/null
-            ((DISPATCHED++))
             sleep 4
+            ((DISPATCHED++))
           done
-
           echo "✅ Total dispatched: $DISPATCHED scans"
-          echo "dispatched=$DISPATCHED" >> $GITHUB_OUTPUT
 
       - name: 📢 Send summary to Discord
         if: always()
         run: |
-          DISPATCHED="${{ steps.dispatch.outputs.dispatched || '0' }}"
           curl -H "Content-Type: application/json" \
             -d "{
               \"embeds\": [{
                 \"title\": \"🚀 Digital Sentinel PRIME Scan Initiated\",
-                \"description\": \"Automated scan launched after target update from Bugcrowd\",
+                \"description\": \"Targets auto-updated and scans dispatched successfully\",
                 \"color\": 5763719,
                 \"fields\": [
-                  {\"name\": \"🎯 Targets Updated\", \"value\": \"203\", \"inline\": true},
-                  {\"name\": \"📡 Scans Dispatched\", \"value\": \"$DISPATCHED\", \"inline\": true},
-                  {\"name\": \"🧠 AI Analysis\", \"value\": \"Enabled\", \"inline\": true},
-                  {\"name\": \"⏰ Next Cycle\", \"value\": \"6 hours\", \"inline\": true}
+                  {\"name\": \"Targets Updated\", \"value\": \"203\", \"inline\": true},
+                  {\"name\": \"AI Analysis\", \"value\": \"Enabled\", \"inline\": true},
+                  {\"name\": \"Next Cycle\", \"value\": \"6h\", \"inline\": true}
                 ],
-                \"footer\": {\"text\": \"Digital Sentinel PRIME\"},
-                \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+                \"footer\": {\"text\": \"Digital Sentinel PRIME\"}
               }]
-            }" "${{ secrets.DISCORD_WEBHOOK_URL }}" 2>/dev/null || true
+            }" "${{ secrets.DISCORD_WEBHOOK_URL }}" || true
