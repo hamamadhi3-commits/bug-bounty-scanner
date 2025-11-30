@@ -1,10 +1,13 @@
 name: ⚡ Worker Sentinel – Deep Mode v4.1
+
 on:
+  repository_dispatch:
+    types: [worker_dispatch]
   workflow_dispatch:
     inputs:
       worker_id:
-        description: "Worker ID"
-        required: true
+        description: "Manual Worker ID (Optional)"
+        required: false
 
 jobs:
   scan_target:
@@ -28,14 +31,14 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          WORKER_ID: ${{ github.event.inputs.worker_id }}
+          WORKER_ID: ${{ github.event.client_payload.worker_id || github.event.inputs.worker_id }}
         run: |
           echo "⚙️ Starting Worker Sentinel #${WORKER_ID}..."
-          python3 scripts/worker_${WORKER_ID}.py || echo "⚠️ Worker ${WORKER_ID} encountered an issue"
+          python3 src/scan_engine.py --worker ${WORKER_ID} || echo "⚠️ Worker ${WORKER_ID} encountered an issue"
 
       - name: Report to Discord
         if: always()
         run: |
           curl -H "Content-Type: application/json" \
-            -d "{\"content\": \"✅ Digital Sentinel PRIME v4.1 (Worker #${{ github.event.inputs.worker_id }}) completed its cycle successfully.\"}" \
+            -d "{\"content\": \"✅ Digital Sentinel PRIME v4.1 (Worker #${{ github.event.client_payload.worker_id || github.event.inputs.worker_id }}) completed its cycle successfully.\"}" \
             ${{ secrets.DISCORD_WEBHOOK_URL }}
