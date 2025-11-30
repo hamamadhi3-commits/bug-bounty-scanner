@@ -1,10 +1,9 @@
-name: 🌐 Recon Sentinel Engine v5.0
+name: 🌐 Recon Sentinel Engine v5.0 – Autonomous Mode
 
 on:
   workflow_dispatch:
   schedule:
-    # Run every 6 hours
-    - cron: "0 */6 * * *"
+    - cron: "0 */6 * * *"  # run every 6 hours automatically
 
 jobs:
   recon:
@@ -15,33 +14,63 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: ⚙️ Set up Python
+      - name: ⚙️ Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
 
-      - name: 🧠 Install Dependencies
+      - name: 📦 Install Dependencies
         run: |
           pip install requests beautifulsoup4 aiohttp
 
-      - name: 🛰️ Fetch Bugcrowd Program Scopes
+      - name: 🚀 Run Scope Fetcher
         run: |
-          echo "🚀 Fetching Bugcrowd program scopes..."
+          echo "🚀 Fetching scopes from Bugcrowd..."
           python3 src/scope_fetcher.py
 
       - name: 🔍 Run Recon Engine
         run: |
-          echo "🔎 Running recon scan..."
+          echo "🔍 Running parallel recon scan..."
           python3 src/recon_engine.py
 
-      - name: ♻️ Auto Scope Update
+      - name: ♻️ Auto Scope Updater
         run: |
-          echo "♻️ Running auto-scope updater..."
+          echo "♻️ Auto-updating scopes..."
           python3 src/auto_scope_updater.py
 
       - name: 📣 Notify Discord
         if: always()
         run: |
           curl -H "Content-Type: application/json" \
-          -d "{\"content\": \"✅ Recon Sentinel cycle completed successfully (Digital Sentinel v5.0).\"}" \
+          -d "{\"content\": \"✅ Recon Sentinel v5.0 cycle completed successfully (Digital Sentinel Autonomous Mode).\"}" \
           "${{ secrets.DISCORD_WEBHOOK_URL }}"
+
+      - name: ♻️ Re-trigger Self Run
+        if: always()
+        run: |
+          echo "♻️ Re-triggering Recon Sentinel workflow..."
+          curl -X POST \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/recon-sentinel.yml/dispatches \
+          -d '{"ref":"main"}'
+
+      - name: 🔁 Trigger Worker Sentinel
+        if: always()
+        run: |
+          echo "🚀 Triggering Worker Sentinel v4.2..."
+          curl -X POST \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/worker-sentinel.yml/dispatches \
+          -d '{"ref":"main"}'
+
+      - name: 🧠 Trigger Digital Sentinel PRIME
+        if: always()
+        run: |
+          echo "🧠 Triggering Digital Sentinel PRIME v4.1..."
+          curl -X POST \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/master-sentinel.yml/dispatches \
+          -d '{"ref":"main"}'
